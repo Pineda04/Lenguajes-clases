@@ -132,7 +132,7 @@ namespace BlogUNAH.API.Services
             return new JwtSecurityToken(
                 issuer: _configuration["JWT:ValidIssuer"],
                 audience: _configuration["JWT:ValidAudience"],
-                expires: DateTime.Now.AddHours(1),
+                expires: DateTime.Now.AddMinutes(int.Parse(_configuration["JWT:Expires"] ?? "15")),
                 claims: authClaims,
                 signingCredentials: new SigningCredentials(authSigninKey, 
                     SecurityAlgorithms.HmacSha256)
