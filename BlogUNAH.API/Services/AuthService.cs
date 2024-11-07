@@ -16,16 +16,36 @@ namespace BlogUNAH.API.Services
         private readonly SignInManager<UserEntity> _signInManager;
         private readonly UserManager<UserEntity> _userManager;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<AuthService> _logger;
 
         public AuthService(
             SignInManager<UserEntity> signInManager,
             UserManager<UserEntity> userManager, 
-            IConfiguration configuration
+            IConfiguration configuration,
+            ILogger <AuthService> logger
             )
         {
             this._signInManager = signInManager;
             this._userManager = userManager;
             this._configuration = configuration;
+            this._logger = logger;
+        }
+
+        public ClaimsPrincipal GetTokenPrincipal(string token)
+        {
+            var securityKey = new SymmetricSecurityKey(Encoding
+            .UTF8.GetBytes(_configuration.GetSection("JWT:Secret").Value));
+
+            var validation = new TokenValidationParameters 
+            {
+                IssuerSigningKey = securityKey,
+                ValidateLifetime = false,
+                ValidateActor = false,
+                ValidateIssuer = false,
+                ValidateAudience = false
+            };
+
+            return new JwtSecurityTokenHandler().ValidateToken(token, validation, out _);
         }
 
         public async Task<ResponseDto<LoginResponseDto>> LoginAsync(LoginDto dto)
@@ -81,6 +101,37 @@ namespace BlogUNAH.API.Services
             };
 
 
+        }
+
+        public async Task<ResponseDto<LoginResponseDto>> RefreshTokenAsync(RefreshTokenDto dto)
+        {
+            // throw new NotImplementedException();
+            string email = "";
+
+            try
+            {
+                var principal = GetTokenPrincipal(dto.Token);
+
+                var emailClaim = principal.Claims.FirstOrDefault(c => c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress");
+
+                var userIdClaim = principal.Claims.Where(x => x.Type == "UserId").FirstOrDefault();
+                // _logger.LogInformation($"Correo del usuario es: {emailClaim.Value}");
+                // _logger.LogInformation($"Id del usuario es: {userIdClaim.Value}");
+
+                if(emailClaim is null){
+                    return new ResponseDto<LoginResponseDto> {
+                        StatusCode = 401,
+                        Status = false,
+                        Message = ""
+                    };
+                }
+                
+                return null;
+            }
+            catch(Exception e)
+            {
+                return null;
+            }
         }
 
         public async Task<ResponseDto<LoginResponseDto>> RegisterAsync(RegisterDto dto) 
