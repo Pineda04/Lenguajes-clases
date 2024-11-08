@@ -1,4 +1,5 @@
 ﻿using BlogUNAH.API.Constants;
+using BlogUNAH.API.Database;
 using BlogUNAH.API.Database.Entities;
 using BlogUNAH.API.Dtos.Auth;
 using BlogUNAH.API.Dtos.Common;
@@ -7,6 +8,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace BlogUNAH.API.Services
@@ -17,18 +19,21 @@ namespace BlogUNAH.API.Services
         private readonly UserManager<UserEntity> _userManager;
         private readonly IConfiguration _configuration;
         private readonly ILogger<AuthService> _logger;
+        private readonly BlogUNAHContext _context;
 
         public AuthService(
             SignInManager<UserEntity> signInManager,
-            UserManager<UserEntity> userManager, 
+            UserManager<UserEntity> userManager,
             IConfiguration configuration,
-            ILogger <AuthService> logger
+            ILogger<AuthService> logger,
+            BlogUNAHContext context
             )
         {
             this._signInManager = signInManager;
             this._userManager = userManager;
             this._configuration = configuration;
             this._logger = logger;
+            this._context = context;
         }
 
         public ClaimsPrincipal GetTokenPrincipal(string token)
@@ -36,7 +41,7 @@ namespace BlogUNAH.API.Services
             var securityKey = new SymmetricSecurityKey(Encoding
             .UTF8.GetBytes(_configuration.GetSection("JWT:Secret").Value));
 
-            var validation = new TokenValidationParameters 
+            var validation = new TokenValidationParameters
             {
                 IssuerSigningKey = securityKey,
                 ValidateLifetime = false,
@@ -51,49 +56,48 @@ namespace BlogUNAH.API.Services
         public async Task<ResponseDto<LoginResponseDto>> LoginAsync(LoginDto dto)
         {
             var result = await _signInManager
-                .PasswordSignInAsync(dto.Email, 
-                                     dto.Password, 
-                                     isPersistent: false, 
+                .PasswordSignInAsync(dto.Email,
+                                     dto.Password,
+                                     isPersistent: false,
                                      lockoutOnFailure: false);
 
-            if(result.Succeeded) 
+            if (result.Succeeded)
             {
                 // Generación del token
                 var userEntity = await _userManager.FindByEmailAsync(dto.Email);
 
                 // ClaimList creation
-                var authClaims = new List<Claim>
-                {
-                    new Claim(ClaimTypes.Email, userEntity.Email),
-                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                    new Claim("UserId", userEntity.Id),
-                };
-
-                var userRoles = await _userManager.GetRolesAsync(userEntity);
-                foreach (var role in userRoles)
-                {
-                    authClaims.Add(new Claim(ClaimTypes.Role, role));
-                }
+                List<Claim> authClaims = await GetClaims(userEntity);
 
                 var jwtToken = GetToken(authClaims);
 
-                return new ResponseDto<LoginResponseDto> 
+                var refreshToken = GenerateRefreshTokenString();
+
+                userEntity.RefreshToken = refreshToken;
+                userEntity.ResfreshTokenExpire = DateTime.Now
+                    .AddMinutes(int.Parse(_configuration["JWT:RefreshTokenExpire"] ?? "30"));
+
+                _context.Entry(userEntity);
+                await _context.SaveChangesAsync();
+
+                return new ResponseDto<LoginResponseDto>
                 {
                     StatusCode = 200,
                     Status = true,
                     Message = "Inicio de sesion satisfactorio",
-                    Data = new LoginResponseDto 
+                    Data = new LoginResponseDto
                     {
                         FullName = $"{userEntity.FirstName} {userEntity.LastName}",
                         Email = userEntity.Email,
                         Token = new JwtSecurityTokenHandler().WriteToken(jwtToken),
                         TokenExpiration = jwtToken.ValidTo,
+                        RefreshToken = refreshToken
                     }
                 };
 
             }
 
-            return new ResponseDto<LoginResponseDto> 
+            return new ResponseDto<LoginResponseDto>
             {
                 Status = false,
                 StatusCode = 401,
@@ -101,6 +105,24 @@ namespace BlogUNAH.API.Services
             };
 
 
+        }
+
+        private async Task<List<Claim>> GetClaims(UserEntity userEntity)
+        {
+            var authClaims = new List<Claim>
+                {
+                    new Claim(ClaimTypes.Email, userEntity.Email),
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("UserId", userEntity.Id),
+                };
+
+            var userRoles = await _userManager.GetRolesAsync(userEntity);
+            foreach (var role in userRoles)
+            {
+                authClaims.Add(new Claim(ClaimTypes.Role, role));
+            }
+
+            return authClaims;
         }
 
         public async Task<ResponseDto<LoginResponseDto>> RefreshTokenAsync(RefreshTokenDto dto)
@@ -118,25 +140,107 @@ namespace BlogUNAH.API.Services
                 // _logger.LogInformation($"Correo del usuario es: {emailClaim.Value}");
                 // _logger.LogInformation($"Id del usuario es: {userIdClaim.Value}");
 
-                if(emailClaim is null){
-                    return new ResponseDto<LoginResponseDto> {
+                if (emailClaim is null)
+                {
+                    return new ResponseDto<LoginResponseDto>
+                    {
                         StatusCode = 401,
                         Status = false,
-                        Message = ""
+                        Message = "Acceso no autorizado, no se encontro un correo valido"
                     };
                 }
-                
-                return null;
+
+                email = emailClaim.Value;
+
+                var userEntity = await _userManager.FindByEmailAsync(email);
+
+                if (userEntity is null)
+                {
+                    return new ResponseDto<LoginResponseDto>
+                    {
+                        StatusCode = 401,
+                        Status = false,
+                        Message = "Acceso no autorizado: el usuario no existe"
+                    };
+                }
+
+                if (userEntity.RefreshToken != dto.RefreshToken)
+                {
+                    return new ResponseDto<LoginResponseDto>
+                    {
+                        StatusCode = 401,
+                        Status = false,
+                        Message = "Acceso no autorizado: la sesión no es valida"
+                    };
+                }
+
+                if (userEntity.ResfreshTokenExpire < DateTime.Now)
+                {
+                    return new ResponseDto<LoginResponseDto>
+                    {
+                        StatusCode = 401,
+                        Status = false,
+                        Message = "Acceso no autorizado: la sesión ha expirado"
+                    };
+                }
+
+                List<Claim> authClaims = await GetClaims(userEntity);
+
+                var jwtToken = GetToken(authClaims);
+
+                var loginResposeDto = new LoginResponseDto
+                {
+                    Email = email,
+                    FullName = $"{userEntity.FirstName} {userEntity.LastName}",
+                    Token = new JwtSecurityTokenHandler().WriteToken(jwtToken),
+                    TokenExpiration = jwtToken.ValidTo,
+                    RefreshToken = GenerateRefreshTokenString()
+                };
+
+                userEntity.RefreshToken = loginResposeDto.RefreshToken;
+                userEntity.ResfreshTokenExpire = DateTime.Now
+                    .AddMinutes(int.Parse(_configuration["JWT:RefreshTokenExpire"] ?? "30"));
+
+                _context.Entry(userEntity);
+                await _context.SaveChangesAsync();
+
+                return new ResponseDto<LoginResponseDto>
+                {
+                    Status = true,
+                    StatusCode = 200,
+                    Message = "Token renovado exitosamente",
+                    Data = loginResposeDto
+                };
+
             }
-            catch(Exception e)
+            catch (Exception e)
             {
-                return null;
+                _logger.LogError(exception: e, message: e.Message);
+                return new ResponseDto<LoginResponseDto>
+                {
+                    StatusCode = 500,
+                    Status = false,
+                    Message = "Ocurrio un error al renovar el token"
+                };
             }
         }
 
-        public async Task<ResponseDto<LoginResponseDto>> RegisterAsync(RegisterDto dto) 
+        private string GenerateRefreshTokenString()
         {
-            var user = new UserEntity {
+            var randomNumber = new byte[64];
+
+            using (var numberGenerator = RandomNumberGenerator.Create())
+            {
+                numberGenerator.GetBytes(randomNumber);
+            }
+
+            return Convert.ToBase64String(randomNumber);
+        }
+
+        public async Task<ResponseDto<LoginResponseDto>> RegisterAsync(RegisterDto dto)
+        {
+            var user = new UserEntity
+            {
                 FirstName = dto.FirstName,
                 LastName = dto.LastName,
                 UserName = dto.Email,
@@ -145,35 +249,44 @@ namespace BlogUNAH.API.Services
 
             var result = await _userManager.CreateAsync(user, dto.Password);
 
-            if(result.Succeeded){
+            if (result.Succeeded)
+            {
                 var userEntity = await _userManager.FindByEmailAsync(dto.Email);
-                
+
                 await _userManager.AddToRoleAsync(userEntity, RolesConstant.USER); // Cuando se registre se le asignara el rol de USER
-                
+
                 // Generar el token para la autenticación
-                var authClaims = new List<Claim> {
-                    new Claim(ClaimTypes.Email, userEntity.Email),
-                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                    new Claim("UserId", userEntity.Id),
-                    new Claim(ClaimTypes.Role, RolesConstant.USER)
-                };
+                var authClaims = await GetClaims(userEntity);
 
                 var jwtToken = GetToken(authClaims);
 
-                return new ResponseDto<LoginResponseDto>{
+                var refreshToken = GenerateRefreshTokenString();
+
+                userEntity.RefreshToken = refreshToken;
+                userEntity.ResfreshTokenExpire = DateTime.Now
+                    .AddMinutes(int.Parse(_configuration["JWT:RefreshTokenExpire"] ?? "30"));
+
+                _context.Entry(userEntity);
+                await _context.SaveChangesAsync();
+
+                return new ResponseDto<LoginResponseDto>
+                {
                     StatusCode = 200,
-                    Status = true, 
+                    Status = true,
                     Message = "Registro de usuario realizado satisfactoriamente.",
-                    Data = new LoginResponseDto{
+                    Data = new LoginResponseDto
+                    {
                         FullName = $"{userEntity.FirstName} {userEntity.LastName}",
                         Email = userEntity.Email,
                         Token = new JwtSecurityTokenHandler().WriteToken(jwtToken),
                         TokenExpiration = jwtToken.ValidTo,
+                        RefreshToken = refreshToken
                     }
                 };
             }
 
-            return new ResponseDto<LoginResponseDto>{
+            return new ResponseDto<LoginResponseDto>
+            {
                 StatusCode = 400,
                 Status = false,
                 Message = "Error al registrar el usuario"
@@ -190,7 +303,7 @@ namespace BlogUNAH.API.Services
                 audience: _configuration["JWT:ValidAudience"],
                 expires: DateTime.Now.AddMinutes(int.Parse(_configuration["JWT:Expires"] ?? "15")),
                 claims: authClaims,
-                signingCredentials: new SigningCredentials(authSigninKey, 
+                signingCredentials: new SigningCredentials(authSigninKey,
                     SecurityAlgorithms.HmacSha256)
             );
         }
