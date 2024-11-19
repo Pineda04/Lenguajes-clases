@@ -48,7 +48,7 @@ namespace BlogUNAH.API.Database
 
                 if (!await userManager.Users.AnyAsync()) 
                 {
-                    var userAdmin = new UserEntity
+                    var userAdmin = new UserEntity 
                     {
                         FirstName = "Administrador",
                         LastName = "Blog",

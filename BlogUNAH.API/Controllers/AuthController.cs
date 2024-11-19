@@ -29,7 +29,7 @@ namespace BlogUNAH.API.Controllers
 
         [HttpPost("register")]
         [AllowAnonymous]
-        public async Task<ActionResult<ResponseDto<LoginResponseDto>>> Register(RegisterDto dto) 
+        public async Task<ActionResult<ResponseDto<LoginResponseDto>>> Register(RegisterDto dto)
         {
             var response = await _authService.RegisterAsync(dto);
             return StatusCode(response.StatusCode, response);
@@ -37,10 +37,11 @@ namespace BlogUNAH.API.Controllers
 
         [HttpPost("refresh-token")]
         [AllowAnonymous]
-        public async Task<ActionResult<ResponseDto<LoginResponseDto>>> RefreshToken(RefreshTokenDto dto) 
+        public async Task<ActionResult<ResponseDto<LoginResponseDto>>> RefreshToken(RefreshTokenDto dto)
         {
             var response = await _authService.RefreshTokenAsync(dto);
             return StatusCode(response.StatusCode, response);
         }
+
     }
 }

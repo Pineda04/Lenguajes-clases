@@ -1,17 +1,20 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace BlogUNAH.API.Dtos.Auth
 {
     public class RegisterDto
     {
-        [StringLength(70, MinimumLength = 3, ErrorMessage = "Los {0} no pueden tener mas de {1} y menos de {2} caracteres")]
-        [Display(Name = "nombres")]
-        [Required(ErrorMessage = "Los {0} son requeridos")]
-        public string  FirstName { get; set; }
+        [StringLength(70, MinimumLength = 3, 
+            ErrorMessage = "Los {0} no puede tener mas de {1} y menos de {2} caracteres")]
+        [Display(Name = "Nombres")]
+        [Required(ErrorMessage = "Los {0} es requerido")]
+        public string FirstName { get; set; }
 
-        [StringLength(70, MinimumLength = 3, ErrorMessage = "Los {0} no pueden tener mas de {1} y menos de {2} caracteres")]
-        [Display(Name = "apellidos")]
-        [Required(ErrorMessage = "Los {0} son requeridos")]
+        [StringLength(70, MinimumLength = 3,
+            ErrorMessage = "Los {0} no puede tener mas de {1} y menos de {2} caracteres")]
+        [Display(Name = "Apellidos")]
+        [Required(ErrorMessage = "Los {0} es requerido")]
         public string LastName { get; set; }
 
         [Display(Name = "Correo Electrónico")]

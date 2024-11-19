@@ -291,7 +291,7 @@ namespace BlogUNAH.API.Migrations
                         .HasColumnType("nvarchar(450)")
                         .HasColumnName("refresh_token");
 
-                    b.Property<DateTime>("ResfreshTokenExpire")
+                    b.Property<DateTime>("RefreshTokenExpire")
                         .HasColumnType("datetime2")
                         .HasColumnName("refresh_token_expire");
 

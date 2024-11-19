@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace BlogUNAH.API.Dtos.Auth
 {
@@ -10,7 +6,7 @@ namespace BlogUNAH.API.Dtos.Auth
     {
         [Required(ErrorMessage = "El token es requerido")]
         public string Token { get; set; }
-        
+
         [Required(ErrorMessage = "El refresh token es requerido")]
         public string RefreshToken { get; set; }
     }
